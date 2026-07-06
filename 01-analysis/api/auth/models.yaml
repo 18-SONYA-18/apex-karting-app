@@ -1,0 +1,192 @@
+# Аутентификация: схема безопасности и DTO потока OTP (вход, регистрация, смена телефона).
+# Ссылки: '#/components/...' — внутри файла; '../profile/models.yaml#/...' — на клиента.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'JWT access-токен, выдаётся после POST /auth/verify-code и обновляется через POST /auth/refresh. Передаётся в заголовке Authorization: Bearer <access_token>.'
+
+  schemas:
+    RequestCodeRequest:
+      type: object
+      description: Запрос на отправку OTP-кода на номер телефона.
+      required:
+        - phone
+      properties:
+        phone:
+          type: string
+          description: Номер телефона в формате E.164.
+          pattern: '^\+[1-9]\d{1,14}$'
+          example: '+79991234567'
+
+    RequestCodeResponse:
+      type: object
+      description: Ответ на запрос OTP-кода. В демонстрационной backend-реализации code возвращается в ответе вместо отправки через SMS-провайдера.
+      required:
+        - ttl_seconds
+        - resend_after_seconds
+      properties:
+        ttl_seconds:
+          type: integer
+          description: Срок жизни кода в секундах (по умолчанию 300 = 5 минут). По истечении код недействителен.
+          example: 300
+        resend_after_seconds:
+          type: integer
+          description: Через сколько секунд можно запросить повторную отправку (по умолчанию 60). Более ранний повтор → 429.
+          example: 60
+        code:
+          type: string
+          description: OTP-код для демонстрационной реализации без SMS-провайдера. В production должен отправляться через провайдера и не возвращаться клиенту.
+          pattern: '^\d{4,6}$'
+          example: '123456'
+
+    TokenPair:
+      type: object
+      description: >-
+        Пара JWT-токенов сессии (R-016). access_token передаётся в Authorization
+        для защищённых запросов; refresh_token используется только на /auth/refresh
+        для получения новой пары (ротация).
+      required:
+        - access_token
+        - refresh_token
+        - token_type
+        - expires_in
+      properties:
+        access_token:
+          type: string
+          description: JWT access-токен. Короткоживущий, передаётся в заголовке Authorization.
+        refresh_token:
+          type: string
+          description: Refresh-токен для обновления сессии через POST /auth/refresh. Долгоживущий, хранится только на клиенте.
+        token_type:
+          type: string
+          description: Тип токена.
+          enum:
+            - Bearer
+          example: Bearer
+        expires_in:
+          type: integer
+          description: Срок жизни access-токена в секундах.
+          example: 900
+
+    RefreshTokenRequest:
+      type: object
+      description: Запрос на обновление сессии по refresh-токену (R-016).
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: Действительный refresh-токен, ранее выданный verify-code или refresh.
+
+    PushTokenRequest:
+      type: object
+      description: Регистрация push-токена устройства для напоминаний о заезде (R-006).
+      required:
+        - token
+        - platform
+      properties:
+        token:
+          type: string
+          description: Токен push-уведомлений, выданный платформой (APNs/FCM).
+        platform:
+          type: string
+          description: Платформа устройства.
+          enum:
+            - ios
+            - android
+          example: ios
+
+    PushTokenDeleteRequest:
+      type: object
+      description: >-
+        Снятие регистрации push-токена устройства (R-006). Токен передаётся в теле,
+        а не в URL, чтобы не записывать сырое значение токена в логи/историю URL.
+      required:
+        - token
+        - platform
+      properties:
+        token:
+          type: string
+          description: Токен push-уведомлений, выданный платформой (APNs/FCM).
+        platform:
+          type: string
+          description: Платформа устройства.
+          enum:
+            - ios
+            - android
+          example: ios
+
+    VerifyCodeRequest:
+      type: object
+      description: >-
+        Подтверждение OTP-кода и вход/регистрация. Только phone и code: на этом шаге
+        ещё не известно, новый клиент или существующий, поэтому имя здесь не передаётся —
+        для нового клиента оно дозаполняется отдельным шагом (PATCH /profile, шаг 3 SCR-001).
+      required:
+        - phone
+        - code
+      properties:
+        phone:
+          type: string
+          description: Номер телефона в формате E.164.
+          pattern: '^\+[1-9]\d{1,14}$'
+          example: '+79991234567'
+        code:
+          type: string
+          description: OTP-код из SMS (4–6 цифр).
+          pattern: '^\d{4,6}$'
+          example: '1234'
+
+    VerifyCodeResponse:
+      type: object
+      description: >-
+        Ответ на подтверждение кода — пара токенов сессии и данные клиента (R-016).
+        Для нового клиента (is_new=true) поле client.name пустое/отсутствует: имя
+        дозаполняется через PATCH /profile (шаг 3 SCR-001). Существующий клиент
+        возвращается с заполненным именем.
+      required:
+        - tokens
+        - client
+        - is_new
+      properties:
+        tokens:
+          $ref: '#/components/schemas/TokenPair'
+        client:
+          $ref: '../profile/models.yaml#/components/schemas/Client'
+        is_new:
+          type: boolean
+          description: true, если клиент только что зарегистрирован (имя ещё не задано).
+
+    ChangePhoneRequestCodeRequest:
+      type: object
+      description: Запрос на отправку OTP-кода для смены номера телефона.
+      required:
+        - new_phone
+      properties:
+        new_phone:
+          type: string
+          description: Новый номер телефона в формате E.164.
+          pattern: '^\+[1-9]\d{1,14}$'
+          example: '+79991234567'
+
+    ChangePhoneConfirmRequest:
+      type: object
+      description: Подтверждение смены номера телефона.
+      required:
+        - new_phone
+        - code
+      properties:
+        new_phone:
+          type: string
+          description: Новый номер телефона в формате E.164.
+          pattern: '^\+[1-9]\d{1,14}$'
+          example: '+79991234567'
+        code:
+          type: string
+          description: OTP-код из SMS (4–6 цифр).
+          pattern: '^\d{4,6}$'
+          example: '1234'

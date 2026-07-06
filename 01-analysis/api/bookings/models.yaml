@@ -1,0 +1,166 @@
+openapi: 3.0.3
+
+info:
+  title: Апекс API — Bookings
+  description: >-
+    Бронирования клиента: создание, список, детали и отмена. Часть клиентского
+    API сервиса записи на заезды картинг-центра Апекс.
+  version: 1.0.0
+
+servers:
+  - url: https://api.apex-karting.example/v1
+    description: Production — продакшен-окружение
+  - url: https://staging-api.apex-karting.example/v1
+    description: Staging — тестовое окружение
+
+tags:
+  - name: Bookings
+    description: Бронирования
+
+security:
+  - bearerAuth: []
+
+paths:
+  /bookings:
+    post:
+      tags:
+        - Bookings
+      summary: Создать бронь
+      operationId: createBooking
+      description: >-
+        Запись на слот (SCR-004). seats_count 1..4, rental_count 0..seats_count.
+        Итоговая цена (price_total) производна от тарифов слота:
+        slot.price·seats_count + slot.rental_price·rental_count (R-005). Операция
+        атомарна.
+
+
+        Идемпотентность (R-022): заголовок Idempotency-Key обязателен. Повтор
+        запроса с тем же ключом и тем же телом возвращает идентичный ответ ранее
+        созданной брони (тот же 201), а не создаёт дубль. Повтор того же ключа с
+        другим телом → 409 (idempotency_key_conflict). Ключ хранится не менее 24 ч.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: >-
+            Обязательный ключ идемпотентности (UUID) для безопасного повтора при
+            сетевом сбое (NFR-9, R-022). Хранится ≥24 ч; повтор с тем же ключом и
+            телом → тот же ответ, с другим телом → 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './models.yaml#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: Бронь создана
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/CreateBookingResponse'
+        '400':
+          $ref: '../common/models.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        '409':
+          $ref: '../common/models.yaml#/components/responses/Conflict'
+        '410':
+          $ref: '../common/models.yaml#/components/responses/Gone'
+        '422':
+          $ref: '../common/models.yaml#/components/responses/UnprocessableEntity'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+    get:
+      tags:
+        - Bookings
+      summary: Мои брони
+      operationId: listBookings
+      description: >-
+        Список броней текущего клиента (SCR-005, R-025). Пагинация limit/offset.
+        Сортировка по slot.start_at по убыванию (ближайшие/последние сверху).
+        Фильтр по статусу (status) опционален и принимает несколько значений
+        (OR): без фильтра возвращаются брони всех статусов, включая отменённые
+        (cancelled) и поздно отменённые (late_cancel) — они остаются видимы в
+        истории. Группировка предстоящие/прошедшие — на клиенте по slot.start_at.
+      parameters:
+        - $ref: '../common/models.yaml#/components/parameters/BookingStatusParam'
+        - $ref: '../common/models.yaml#/components/parameters/LimitParam'
+        - $ref: '../common/models.yaml#/components/parameters/OffsetParam'
+      responses:
+        '200':
+          description: Список броней клиента
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/BookingListResponse'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+  /bookings/{bookingId}:
+    get:
+      tags:
+        - Bookings
+      summary: Детали брони
+      operationId: getBooking
+      description: Полные данные брони с вложенными данными слота/конфигурации трассы/маршала для карточки (SCR-006).
+      parameters:
+        - $ref: '../common/models.yaml#/components/parameters/BookingIdParam'
+      responses:
+        '200':
+          description: Детали брони
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/Booking'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../common/models.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../common/models.yaml#/components/responses/NotFound'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+  /bookings/{bookingId}/cancel:
+    post:
+      tags:
+        - Bookings
+      summary: Отменить бронь
+      operationId: cancelBooking
+      description: >-
+        Отмена брони (SCR-006/BS-003). Сервер определяет тип по времени до
+        старта: ≥2ч → cancelled (места и прокатная экипировка возвращаются в слот);
+        <2ч → late_cancel (не возвращаются, штрафов нет). Граница ровно 2ч
+        трактуется как ранняя. Отмена недоступна после старта слота.
+      parameters:
+        - $ref: '../common/models.yaml#/components/parameters/BookingIdParam'
+      responses:
+        '200':
+          description: Бронь отменена; поле status = cancelled или late_cancel, заполнено cancelled_at
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/Booking'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../common/models.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../common/models.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '../common/models.yaml#/components/responses/Conflict'
+        '422':
+          $ref: '../common/models.yaml#/components/responses/UnprocessableEntity'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: '../auth/models.yaml#/components/securitySchemes/bearerAuth'

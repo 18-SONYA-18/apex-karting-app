@@ -1,0 +1,16 @@
+{
+  "name": "apex-karting-api-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Клиентское API сервиса записи на заезды картинг-центра «Апекс» (мульти-файловый OpenAPI)",
+  "scripts": {
+    "lint": "redocly lint",
+    "preview": "redocly preview-docs",
+    "bundle": "for d in auth profile slots bookings marshals; do redocly bundle $d -o dist/$d.yaml; done",
+    "build": "npm run bundle",
+    "validate": "npm run lint"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.34.0"
+  }
+}

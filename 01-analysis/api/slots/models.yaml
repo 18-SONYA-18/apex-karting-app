@@ -1,0 +1,245 @@
+# Слот (заезд) — read-only-проекция и его представления.
+# Ссылки: '#/components/schemas/...' — внутри файла;
+# '../marshals/...' и '../common/...' — на соседние домены.
+
+components:
+  schemas:
+    SlotStatus:
+      type: string
+      description: Статус слота.
+      enum:
+        - scheduled
+        - cancelled
+
+    TrackType:
+      type: string
+      description: Тип конфигурации трассы — новичковая (novice) или опытная (experienced).
+      enum:
+        - novice
+        - experienced
+
+    Geometry:
+      description: Геометрия трассы для отрисовки линии на карте Яндекс.
+      oneOf:
+        - type: array
+          description: Массив координат точек трассы.
+          items:
+            type: array
+            description: Координата в виде пары [lat, lng].
+            minItems: 2
+            maxItems: 2
+            items:
+              type: number
+        - type: string
+          description: Закодированная полилиния (encoded polyline).
+
+    TrackConfig:
+      type: object
+      description: Конфигурация трассы заезда. Справочник, доступен только для чтения.
+      required:
+        - id
+        - name
+        - type
+        - capacity_cap
+        - duration_min
+        - geometry
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Идентификатор конфигурации трассы.
+        name:
+          type: string
+          description: Название конфигурации трассы.
+          example: Длинная трасса
+        description:
+          type: string
+          nullable: true
+          description: >-
+            Описательный текст конфигурации трассы/заезда для карточки слота (SCR-003, RR-D07).
+            Опционально; может отсутствовать или быть null.
+          example: >-
+            Длинная трасса с техничными поворотами и шиканой — отлично подойдёт опытным пилотам.
+        type:
+          $ref: '#/components/schemas/TrackType'
+        capacity_cap:
+          type: integer
+          description: Потолок числа мест на трассе. Новичковая — не более 10, опытная — не более 14.
+          example: 14
+        duration_min:
+          type: integer
+          description: Продолжительность заезда в минутах (обычно 10-20).
+          example: 15
+        geometry:
+          $ref: '#/components/schemas/Geometry'
+
+    Slot:
+      type: object
+      description: >-
+        Полная карточка слота (конкретный заезд на дату/время). Доступен
+        только для чтения. Статус «Прошедшая» — производное значение по полю start_at,
+        отдельным статусом не хранится.
+
+
+        Доступность (R-003): максимально доступное к брони число мест
+        max_seats = min(free_seats, track_config.capacity_cap, 4). Число прокатных комплектов экипировки в
+        брони ограничено: rental_count ≤ free_rental_equipment. Клиент со своей экипировкой
+        занимает место (free_seats), но не расходует прокатный фонд
+        (free_rental_equipment).
+
+
+        Цены (R-010): price — тариф за место, rental_price — отдельный тариф проката
+        за один комплект экипировки, оба в рублях (валюта RUB). Итоговая цена брони производная =
+        price·seats_count + rental_price·rental_count.
+
+
+        Инварианты: free_seats ≤ total_seats; счётчики (free_seats, free_rental_equipment,
+        total_seats) и цены (price, rental_price) неотрицательны.
+      required:
+        - id
+        - start_at
+        - track_config
+        - marshal
+        - total_seats
+        - free_seats
+        - free_rental_equipment
+        - price
+        - rental_price
+        - meeting_point
+        - meeting_point_lat
+        - meeting_point_lng
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Идентификатор слота.
+        start_at:
+          type: string
+          format: date-time
+          description: Дата и время начала заезда.
+        track_config:
+          $ref: '#/components/schemas/TrackConfig'
+        marshal:
+          $ref: '../marshals/models.yaml#/components/schemas/Marshal'
+        total_seats:
+          type: integer
+          minimum: 1
+          description: Общее число мест в слоте.
+          example: 14
+        free_seats:
+          type: integer
+          minimum: 0
+          description: >-
+            Число свободных мест (расчётное). Своя экипировка клиента тоже занимает место.
+            К брони доступно max_seats = min(free_seats, track_config.capacity_cap, 4), R-003.
+          example: 10
+        free_rental_equipment:
+          type: integer
+          minimum: 0
+          description: >-
+            Число свободных прокатных комплектов экипировки из общего фонда (расчётное). Ограничивает
+            rental_count в брони (rental_count ≤ free_rental_equipment). Своя экипировка фонд
+            не расходует, R-003.
+          example: 12
+        price:
+          type: integer
+          minimum: 0
+          description: Цена за одно место, в рублях (целое число, валюта RUB).
+          example: 2500
+        rental_price:
+          type: integer
+          minimum: 0
+          description: Тариф проката за один комплект экипировки, в рублях (целое число, валюта RUB).
+          example: 300
+        meeting_point:
+          type: string
+          description: Адрес или ориентир места сбора.
+          example: Картинг-центр «Апекс», въезд 1
+        meeting_point_lat:
+          type: number
+          format: float
+          description: Широта места сбора.
+          example: 55.751
+        meeting_point_lng:
+          type: number
+          format: float
+          description: Долгота места сбора.
+          example: 37.618
+        status:
+          $ref: '#/components/schemas/SlotStatus'
+
+    SlotSummary:
+      type: object
+      description: Урезанное представление слота для списка (SCR-002).
+      required:
+        - id
+        - start_at
+        - track_config
+        - marshal
+        - price
+        - rental_price
+        - total_seats
+        - free_seats
+        - free_rental_equipment
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Идентификатор слота.
+        start_at:
+          type: string
+          format: date-time
+          description: Дата и время начала заезда.
+        track_config:
+          $ref: '#/components/schemas/TrackConfig'
+        marshal:
+          $ref: '../marshals/models.yaml#/components/schemas/Marshal'
+        price:
+          type: integer
+          minimum: 0
+          description: Цена за одно место, в рублях (целое число, валюта RUB).
+          example: 2500
+        rental_price:
+          type: integer
+          minimum: 0
+          description: Тариф проката за один комплект экипировки, в рублях (целое число, валюта RUB).
+          example: 300
+        total_seats:
+          type: integer
+          minimum: 1
+          description: Общее число мест в слоте.
+          example: 14
+        free_seats:
+          type: integer
+          minimum: 0
+          description: >-
+            Число свободных мест (расчётное). Своя экипировка клиента тоже занимает место.
+            К брони доступно max_seats = min(free_seats, track_config.capacity_cap, 4), R-003.
+          example: 10
+        free_rental_equipment:
+          type: integer
+          minimum: 0
+          description: >-
+            Число свободных прокатных комплектов экипировки из общего фонда (расчётное). Ограничивает
+            rental_count в брони (rental_count ≤ free_rental_equipment). Своя экипировка фонд
+            не расходует, R-003.
+          example: 12
+        status:
+          $ref: '#/components/schemas/SlotStatus'
+
+    SlotListResponse:
+      type: object
+      description: Постраничный список слотов (SCR-002).
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          description: Элементы списка слотов.
+          items:
+            $ref: '#/components/schemas/SlotSummary'
+        meta:
+          $ref: '../common/models.yaml#/components/schemas/PaginationMeta'

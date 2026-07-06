@@ -1,0 +1,156 @@
+openapi: 3.0.3
+
+info:
+  title: Апекс API — Profile
+  description: >-
+    Профиль клиента: просмотр, смена имени, смена телефона по коду из SMS,
+    удаление аккаунта. Часть клиентского API сервиса записи на заезды картинг-центра Апекс.
+  version: 1.0.0
+
+servers:
+  - url: https://api.apex-karting.example/v1
+    description: Production — продакшен-окружение
+  - url: https://staging-api.apex-karting.example/v1
+    description: Staging — тестовое окружение
+
+tags:
+  - name: Profile
+    description: Профиль клиента
+
+security:
+  - bearerAuth: []
+
+paths:
+  /profile:
+    get:
+      tags:
+        - Profile
+      summary: Получить профиль
+      operationId: getProfile
+      description: Данные текущего клиента (только свои, NFR-12).
+      responses:
+        '200':
+          description: Профиль клиента
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/Client'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+    patch:
+      tags:
+        - Profile
+      summary: Обновить имя
+      operationId: updateProfile
+      description: Смена имени без подтверждения кодом (телефон не меняется здесь).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './models.yaml#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Обновлённый профиль клиента
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/Client'
+        '400':
+          $ref: '../common/models.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+    delete:
+      tags:
+        - Profile
+      summary: Удалить аккаунт
+      operationId: deleteAccount
+      description: >-
+        Удаление аккаунта и персональных данных клиента (обработка ПДн, NFR-11/NFR-12;
+        SCR-007 §6.3, AC-008; R-009/R-017). Последствия:
+
+        - активные брони (status=active) аннулируются и освобождают места и прокатную
+          экипировку в своих слотах;
+
+        - прошедшие/завершённые брони анонимизируются (обезличиваются от ПДн), но
+          сохраняются для учёта/статистики центра;
+
+        - все сессии завершаются (refresh-токены отзываются), push-токены удаляются.
+
+        Действие необратимо; подтверждение запрашивается на клиенте (шторка SCR-007).
+      responses:
+        '204':
+          description: Аккаунт и данные удалены, сессия завершена
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+  /profile/phone/request-code:
+    post:
+      tags:
+        - Profile
+      summary: Запросить код для смены телефона
+      operationId: requestPhoneChangeCode
+      description: Телефон — логин, поэтому смена подтверждается кодом из SMS на новый номер (SCR-007).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../auth/models.yaml#/components/schemas/ChangePhoneRequestCodeRequest'
+      responses:
+        '200':
+          description: Код успешно отправлен на новый номер
+          content:
+            application/json:
+              schema:
+                $ref: '../auth/models.yaml#/components/schemas/RequestCodeResponse'
+        '400':
+          $ref: '../common/models.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        '409':
+          $ref: '../common/models.yaml#/components/responses/Conflict'
+        '429':
+          $ref: '../common/models.yaml#/components/responses/TooManyRequests'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+  /profile/phone/confirm:
+    post:
+      tags:
+        - Profile
+      summary: Подтвердить смену телефона
+      operationId: confirmPhoneChange
+      description: Подтверждает новый номер кодом и обновляет phone клиента.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../auth/models.yaml#/components/schemas/ChangePhoneConfirmRequest'
+      responses:
+        '200':
+          description: Обновлённый профиль клиента
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/Client'
+        '400':
+          $ref: '../common/models.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        '409':
+          $ref: '../common/models.yaml#/components/responses/Conflict'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: '../auth/models.yaml#/components/securitySchemes/bearerAuth'

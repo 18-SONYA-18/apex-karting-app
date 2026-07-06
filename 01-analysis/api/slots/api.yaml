@@ -1,0 +1,91 @@
+openapi: 3.0.3
+
+info:
+  title: Апекс API — Slots
+  description: >-
+    Просмотр слотов расписания (read-only проекция) с фильтрами и пагинацией.
+    Часть клиентского API сервиса записи на заезды картинг-центра Апекс.
+  version: 1.0.0
+
+servers:
+  - url: https://api.apex-karting.example/v1
+    description: Production — продакшен-окружение
+  - url: https://staging-api.apex-karting.example/v1
+    description: Staging — тестовое окружение
+
+tags:
+  - name: Slots
+    description: Слоты/расписание, read-only
+
+security:
+  - bearerAuth: []
+
+paths:
+  /slots:
+    get:
+      tags:
+        - Slots
+      summary: Список слотов с фильтрами
+      operationId: listSlots
+      description: >-
+        Возвращает предстоящие слоты (расписание заездов) с фильтрами и
+        пагинацией (SCR-002, BS-001). Слоты — read-only проекция. По умолчанию
+        only_available=false (показываются все, в т.ч. без мест — с пометкой
+        «Мест нет» на клиенте), R-012. Сортировка по start_at по возрастанию (R-027).
+
+
+        Дефолтный диапазон выдачи (R-027): если date_from не задан — текущий
+        момент; если date_to не задан — date_from + 7 дней. Границы дат
+        включительные (R-026). Отменённые слоты (status=cancelled) попадают в
+        выдачу с соответствующим статусом; бронирование на них недоступно (410).
+      parameters:
+        - $ref: '../common/models.yaml#/components/parameters/DateFromParam'
+        - $ref: '../common/models.yaml#/components/parameters/DateToParam'
+        - $ref: '../common/models.yaml#/components/parameters/TrackTypeParam'
+        - $ref: '../common/models.yaml#/components/parameters/MarshalIdParam'
+        - $ref: '../common/models.yaml#/components/parameters/OnlyAvailableParam'
+        - $ref: '../common/models.yaml#/components/parameters/LimitParam'
+        - $ref: '../common/models.yaml#/components/parameters/OffsetParam'
+      responses:
+        '200':
+          description: Список слотов
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/SlotListResponse'
+        '400':
+          $ref: '../common/models.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+  /slots/{slotId}:
+    get:
+      tags:
+        - Slots
+      summary: Карточка слота
+      operationId: getSlot
+      description: >-
+        Полные данные слота для карточки (SCR-003): конфигурация трассы с geometry, место
+        сбора с координатами, цены, доступность мест и прокатной экипировки.
+      parameters:
+        - $ref: '../common/models.yaml#/components/parameters/SlotIdParam'
+      responses:
+        '200':
+          description: Данные слота
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/Slot'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../common/models.yaml#/components/responses/NotFound'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: '../auth/models.yaml#/components/securitySchemes/bearerAuth'

@@ -1,0 +1,35 @@
+# Маршал — справочный объект (read-only) + список маршалов.
+# Ссылки: '#/components/schemas/...' — внутри файла; '../common/...' — на сквозные объекты.
+
+components:
+  schemas:
+    Marshal:
+      type: object
+      description: Маршал, ведущий заезд. Справочник, доступен только для чтения.
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Идентификатор маршала.
+        name:
+          type: string
+          description: Имя маршала.
+          example: Анна
+
+    MarshalListResponse:
+      type: object
+      description: Постраничный список маршалов (справочник для фильтра, BS-001).
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          description: Элементы списка маршалов.
+          items:
+            $ref: '#/components/schemas/Marshal'
+        meta:
+          $ref: '../common/models.yaml#/components/schemas/PaginationMeta'

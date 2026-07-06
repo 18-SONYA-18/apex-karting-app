@@ -1,0 +1,51 @@
+# Клиент и запрос на обновление профиля.
+# Ссылки внутри файла: '#/components/schemas/...'.
+
+components:
+  schemas:
+    Client:
+      type: object
+      description: >-
+        Клиент сервиса. Аутентифицируется по номеру телефона (логин в формате E.164).
+        Сразу после регистрации (verify-code, is_new=true) name ещё не задан —
+        пустое/отсутствующее имя означает незавершённую регистрацию (дозаполняется через PATCH /profile).
+      required:
+        - id
+        - phone
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Идентификатор клиента.
+        name:
+          type: string
+          description: Имя клиента. Отсутствует у только что зарегистрированного клиента до шага 3 (PATCH /profile).
+          minLength: 1
+          maxLength: 100
+          example: Иван
+        phone:
+          type: string
+          description: >-
+            Номер телефона в формате E.164. Используется как логин. Владельцу в
+            GET /profile возвращается полностью; в любых представлениях, видимых
+            третьим лицам, ПДн (включая телефон) маскируются (R-017, NFR-11).
+          pattern: '^\+[1-9]\d{1,14}$'
+          example: '+79991234567'
+        created_at:
+          type: string
+          format: date-time
+          description: Дата и время регистрации клиента.
+
+    UpdateProfileRequest:
+      type: object
+      description: Запрос на обновление профиля.
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Имя клиента.
+          minLength: 1
+          maxLength: 100
+          example: Иван

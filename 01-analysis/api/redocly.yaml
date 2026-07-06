@@ -1,0 +1,20 @@
+# Реестр доменных OpenAPI-документов картинг-центра «Апекс».
+# Каждый домен — самодостаточный api.yaml (paths) + models.yaml (components),
+# связанные относительными $ref. Рендер/валидация — через @redocly/cli (см. package.json).
+apis:
+  auth:
+    root: auth/api.yaml
+  slots:
+    root: slots/api.yaml
+  bookings:
+    root: bookings/api.yaml
+  profile:
+    root: profile/api.yaml
+  marshals:
+    root: marshals/api.yaml
+
+rules:
+  # Ловит битые кросс-файловые ссылки (та самая проблема components.yaml → models.yaml).
+  no-unresolved-refs: error
+  no-unused-components: warn
+  operation-operationId-unique: error

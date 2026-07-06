@@ -1,0 +1,49 @@
+openapi: 3.0.3
+
+info:
+  title: Апекс API — Marshals
+  description: >-
+    Справочник маршалов (read-only) для фильтра по маршалу. Часть
+    клиентского API сервиса записи на заезды картинг-центра Апекс.
+  version: 1.0.0
+
+servers:
+  - url: https://api.apex-karting.example/v1
+    description: Production — продакшен-окружение
+  - url: https://staging-api.apex-karting.example/v1
+    description: Staging — тестовое окружение
+
+tags:
+  - name: Marshals
+    description: Справочник маршалов
+
+security:
+  - bearerAuth: []
+
+paths:
+  /marshals:
+    get:
+      tags:
+        - Marshals
+      summary: Справочник маршалов
+      operationId: listMarshals
+      description: Список маршалов для фильтра по маршалу (BS-001). Read-only справочник.
+      parameters:
+        - $ref: '../common/models.yaml#/components/parameters/LimitParam'
+        - $ref: '../common/models.yaml#/components/parameters/OffsetParam'
+      responses:
+        '200':
+          description: Список маршалов
+          content:
+            application/json:
+              schema:
+                $ref: './models.yaml#/components/schemas/MarshalListResponse'
+        '401':
+          $ref: '../common/models.yaml#/components/responses/Unauthorized'
+        default:
+          $ref: '../common/models.yaml#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: '../auth/models.yaml#/components/securitySchemes/bearerAuth'

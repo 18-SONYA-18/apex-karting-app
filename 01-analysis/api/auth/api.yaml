@@ -1,0 +1,215 @@
+openapi: 3.0.3
+
+info:
+  title: Апекс API — Auth
+  description: >-
+    Аутентификация клиента по номеру телефона с подтверждением одноразовым кодом
+    (OTP). Часть клиентского API сервиса записи на заезды картинг-центра Апекс.
+  version: 1.0.0
+
+servers:
+  - url: https://api.apex-karting.example/v1
+    description: Production — продакшен-окружение
+  - url: https://staging-api.apex-karting.example/v1
+    description: Staging — тестовое окружение
+
+tags:
+  - name: Auth
+    description: Аутентификация по телефону и OTP
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/request-code:
+    post:
+      tags:
+        - Auth
+      summary: Запросить код подтверждения (OTP)
+      operationId: requestAuthCode
+      description: >-
+        Отправляет одноразовый код на номер телефона по SMS (шаг 1
+        регистрации/входа, SCR-001). Код — на стороне бэкенда, отдельной
+        сущностью не хранится (R-007).
+
+
+        Правила (отражены в ответе и кодах ошибок):
+
+        - Номер телефона принимается в формате E.164 (см. RequestCodeRequest.phone).
+
+        - TTL кода — ttl_seconds (по умолчанию 300 с / 5 мин); после истечения код
+          недействителен (verify-code вернёт invalid_code).
+
+        - Повторную отправку можно запросить не раньше resend_after_seconds
+          (по умолчанию 60 с); более частые запросы → 429.
+
+        - Действует лимит на число отправок с одного номера/устройства за период
+          (защита от перебора и расходов на SMS) → 429 при превышении.
+
+        - При недоставке SMS код всё равно считается отправленным (ответ 200):
+          клиент может повторить запрос после resend_after_seconds. Гарантия
+          доставки оператором не предоставляется.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "models.yaml#/components/schemas/RequestCodeRequest"
+      responses:
+        "200":
+          description: Код успешно отправлен
+          content:
+            application/json:
+              schema:
+                $ref: "models.yaml#/components/schemas/RequestCodeResponse"
+        "400":
+          $ref: "../common/models.yaml#/components/responses/BadRequest"
+        "429":
+          $ref: "../common/models.yaml#/components/responses/TooManyRequests"
+        default:
+          $ref: "../common/models.yaml#/components/responses/InternalError"
+
+  /auth/verify-code:
+    post:
+      tags:
+        - Auth
+      summary: Подтвердить код и войти/зарегистрироваться
+      operationId: verifyAuthCode
+      description: >-
+        Проверяет код и возвращает пару токенов сессии (access + refresh),
+        профиль клиента и флаг is_new (R-016). Имя на этом шаге не передаётся
+        (новый клиент vs существующий ещё не известен). Для нового клиента
+        (is_new=true) client.name пуст — имя дозаполняется через PATCH /profile
+        (шаг 3 SCR-001); существующий клиент сразу входит.
+
+
+        Ограничено число попыток ввода кода для одной заявки: при превышении
+        текущий код инвалидируется и требуется повторный запрос. Неверный или
+        истёкший код → 400 с code=invalid_code. Слишком частые попытки → 429.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "models.yaml#/components/schemas/VerifyCodeRequest"
+      responses:
+        "200":
+          description: Успешный вход; is_new=true если зарегистрирован новый клиент
+          content:
+            application/json:
+              schema:
+                $ref: "models.yaml#/components/schemas/VerifyCodeResponse"
+        "400":
+          $ref: "../common/models.yaml#/components/responses/BadRequest"
+        "429":
+          $ref: "../common/models.yaml#/components/responses/TooManyRequests"
+        default:
+          $ref: "../common/models.yaml#/components/responses/InternalError"
+
+  /auth/refresh:
+    post:
+      tags:
+        - Auth
+      summary: Обновить токен сессии
+      operationId: refreshToken
+      description: >-
+        Обменивает действительный refresh-токен на новую пару access + refresh
+        (ротация токенов, R-016). Истёкший, отозванный или уже использованный
+        refresh-токен → 401. Access-токен в заголовок Authorization для этого
+        запроса не требуется.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "models.yaml#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Выдана новая пара токенов
+          content:
+            application/json:
+              schema:
+                $ref: "models.yaml#/components/schemas/TokenPair"
+        "400":
+          $ref: "../common/models.yaml#/components/responses/BadRequest"
+        "401":
+          $ref: "../common/models.yaml#/components/responses/Unauthorized"
+        default:
+          $ref: "../common/models.yaml#/components/responses/InternalError"
+
+  /auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: Выход
+      operationId: logout
+      description: >-
+        Завершает текущую сессию: инвалидирует refresh-токен (и связанный
+        access-токен по истечении его срока), R-016. После выхода refresh-токен
+        непригоден для /auth/refresh.
+      responses:
+        "204":
+          description: Сессия завершена
+        "401":
+          $ref: "../common/models.yaml#/components/responses/Unauthorized"
+        default:
+          $ref: "../common/models.yaml#/components/responses/InternalError"
+
+  /auth/push-tokens:
+    post:
+      tags:
+        - Auth
+      summary: Зарегистрировать push-токен
+      operationId: registerPushToken
+      description: >-
+        Регистрирует токен push-уведомлений устройства для текущего клиента,
+        чтобы доставлять напоминания о заезде (R-006). Повторный вызов с тем же
+        токеном идемпотентен (обновляет привязку). Один клиент может иметь
+        несколько токенов (несколько устройств).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "models.yaml#/components/schemas/PushTokenRequest"
+      responses:
+        "204":
+          description: Push-токен зарегистрирован/обновлён
+        "400":
+          $ref: "../common/models.yaml#/components/responses/BadRequest"
+        "401":
+          $ref: "../common/models.yaml#/components/responses/Unauthorized"
+        default:
+          $ref: "../common/models.yaml#/components/responses/InternalError"
+    delete:
+      tags:
+        - Auth
+      summary: Удалить push-токен
+      operationId: deletePushToken
+      description: >-
+        Снимает регистрацию push-токена устройства (например, при выходе или
+        отключении уведомлений), R-006. Токен передаётся в теле запроса, а не в
+        пути URL, чтобы сырое значение токена не попадало в логи/историю URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "models.yaml#/components/schemas/PushTokenDeleteRequest"
+      responses:
+        "204":
+          description: Push-токен удалён (идемпотентно, если уже отсутствовал)
+        "401":
+          $ref: "../common/models.yaml#/components/responses/Unauthorized"
+        "404":
+          $ref: "../common/models.yaml#/components/responses/NotFound"
+        default:
+          $ref: "../common/models.yaml#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: "models.yaml#/components/securitySchemes/bearerAuth"
